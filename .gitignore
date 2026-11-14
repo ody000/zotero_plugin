@@ -1,0 +1,14 @@
+# secrets
+.env
+# python
+.venv/
+__pycache__/
+server/.cache/
+# node / plugin build
+node_modules/
+plugin/.scaffold/
+plugin/build/
+# test papers (copyrighted PDFs)
+papers/**/*.pdf
+papers/out/
+.DS_Store

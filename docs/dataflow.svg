@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 1500 1130" width="1500" height="1130" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+    </marker>
+    <style>
+      .box { fill: #fff; stroke: #222; stroke-width: 1.6; rx: 10; }
+      .ext { fill: #f6f6f6; stroke: #888; stroke-width: 1.4; stroke-dasharray: 6 4; rx: 10; }
+      .t { font-size: 15px; font-weight: 700; fill: #111; }
+      .f { font-family: Menlo, Consolas, monospace; font-size: 13px; fill: #1a66d6; }
+      .d { font-family: Menlo, Consolas, monospace; font-size: 12px; fill: #222; }
+      .n { font-size: 12px; fill: #555; }
+      .h { font-size: 17px; font-weight: 700; fill: #333; }
+      .a { stroke: #333; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+      .ag { stroke: #888; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrg); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1500" height="1130" fill="#ffffff"/>
+
+  <!-- ===== Frames ===== -->
+  <rect x="20" y="20" width="410" height="1090" rx="14" fill="#f3f8f2" stroke="#9cc59a" stroke-width="1.4"/>
+  <text x="40" y="55" class="h">Zotero (TypeScript)</text>
+  <text x="225" y="55" class="f">highlighter.ts</text>
+
+  <rect x="450" y="20" width="1030" height="1090" rx="14" fill="#f4f6fb" stroke="#9fb0d6" stroke-width="1.4"/>
+  <text x="470" y="55" class="h">Python server  (localhost:8765)</text>
+
+  <!-- pipeline frame -->
+  <rect x="463" y="232" width="365" height="676" rx="12" fill="none" stroke="#1a66d6" stroke-width="1.3" stroke-dasharray="8 5"/>
+  <text x="475" y="252" class="f">pipeline.py · run()</text>
+  <text x="648" y="252" class="n">orchestrates steps 3–6</text>
+
+  <!-- ===== Zotero column ===== -->
+  <rect x="50" y="90" width="340" height="80" class="box"/>
+  <text x="68" y="118" class="t">1 · Reader opens a PDF</text>
+  <text x="68" y="140" class="f">highlighter.ts</text>
+  <text x="68" y="159" class="n">auto-run on, and no auto-highlight tag yet</text>
+
+  <text x="55" y="205" class="d">POST /highlight → HighlightRequest (JSON)</text>
+  <text x="55" y="224" class="d">{ pdf_path: "…/storage/ABCD1234/x.pdf",</text>
+  <text x="69" y="242" class="d">density: 0.10,   // setting, 0.05–0.20</text>
+  <text x="69" y="260" class="d">force: false }   // true from the menu</text>
+
+  <rect x="50" y="330" width="340" height="56" class="ext"/>
+  <text x="66" y="353" class="d">on startup: GET /health</text>
+  <text x="80" y="373" class="d">← { status: "ok", scorer: "llm" }</text>
+
+  <rect x="50" y="410" width="340" height="96" class="ext"/>
+  <text x="66" y="432" class="n" font-weight="700">Menus (no new data formats)</text>
+  <text x="66" y="452" class="d">• Highlight this paper → force: true</text>
+  <text x="66" y="472" class="d">• Remove auto-highlights → Zotero only:</text>
+  <text x="80" y="492" class="d">delete annots tagged auto-highlight</text>
+
+  <text x="55" y="700" class="d">HighlightResponse (JSON)</text>
+  <text x="55" y="719" class="d">{ highlights: [Highlight, …],</text>
+  <text x="69" y="737" class="d">scorer: "stub" | "textrank" | "llm",</text>
+  <text x="69" y="755" class="d">cached: bool,</text>
+  <text x="69" y="773" class="d">stats: { n_sentences, n_selected, ms } }</text>
+
+  <rect x="50" y="830" width="340" height="80" class="box"/>
+  <text x="68" y="858" class="t">7 · Save as Zotero annotations</text>
+  <text x="68" y="880" class="f">highlighter.ts</text>
+  <text x="68" y="899" class="n">facet → palette color; "Highlighting…" notice ends</text>
+
+  <path d="M70,910 L70,1012" class="a"/>
+  <text x="85" y="930" class="d">per Highlight → Zotero annotation JSON</text>
+  <text x="85" y="948" class="d">{ type: "highlight", color,</text>
+  <text x="99" y="966" class="d">text, comment: "Result — why…",</text>
+  <text x="99" y="984" class="d">position: { pageIndex, rects },</text>
+  <text x="99" y="1002" class="d">sortIndex, tags: ["auto-highlight"] }</text>
+
+  <rect x="50" y="1014" width="340" height="70" class="ext"/>
+  <text x="68" y="1042" class="t" fill="#444">Zotero database</text>
+  <text x="68" y="1064" class="n">reader draws highlights; sidebar filters by color/tag</text>
+
+  <!-- ===== Server column ===== -->
+  <!-- M1 -->
+  <rect x="480" y="90" width="330" height="70" class="box"/>
+  <text x="498" y="118" class="t">2 · Receive request</text>
+  <text x="498" y="141" class="f">app.py  POST /highlight</text>
+
+  <!-- M2 -->
+  <rect x="480" y="270" width="330" height="70" class="box"/>
+  <text x="498" y="298" class="t">3 · Parse PDF → sentences</text>
+  <text x="498" y="321" class="f">pdf.py  extract()</text>
+
+  <!-- M3 -->
+  <rect x="480" y="455" width="330" height="70" class="box"/>
+  <text x="498" y="483" class="t">4 · Pick + label sentences</text>
+  <text x="498" y="506" class="f">scoring.py  score()</text>
+
+  <!-- M4 -->
+  <rect x="480" y="640" width="330" height="70" class="box"/>
+  <text x="498" y="668" class="t">5 · Apply highlight rules</text>
+  <text x="498" y="691" class="f">pipeline.py  select()</text>
+
+  <!-- M5 -->
+  <rect x="480" y="815" width="330" height="70" class="box"/>
+  <text x="498" y="843" class="t">6 · Sentences → page rectangles</text>
+  <text x="498" y="866" class="f">pdf.py  geometry()</text>
+
+  <!-- M6 -->
+  <rect x="480" y="1000" width="330" height="70" class="box"/>
+  <text x="498" y="1028" class="t">Send response</text>
+  <text x="498" y="1051" class="f">app.py</text>
+
+  <!-- Zotero -> server -->
+  <path d="M390,130 L478,125" class="a"/>
+  <!-- server -> Zotero -->
+  <path d="M480,1035 C440,1035 430,880 392,872" class="a"/>
+
+  <!-- vertical arrows -->
+  <path d="M645,160 L645,268" class="a"/>
+  <path d="M645,340 L645,453" class="a"/>
+  <path d="M645,525 L645,638" class="a"/>
+  <path d="M645,710 L645,813" class="a"/>
+  <path d="M645,885 L645,998" class="a"/>
+
+  <!-- labels on vertical arrows -->
+  <text x="845" y="196" class="d">pdf_path: str, density: float, force: bool</text>
+  <text x="845" y="214" class="d">cache hit (and not force)? → jump to Send</text>
+
+  <text x="845" y="360" class="d">Document</text>
+  <text x="845" y="378" class="d">{ pages: [{index, width, height}],</text>
+  <text x="859" y="396" class="d">sections: [{ title, is_abstract,</text>
+  <text x="874" y="414" class="d">sentences: [{ id, text, words }] }] }</text>
+  <text x="845" y="432" class="d">word = {page, x0,y0,x1,y1, line}  top-left y</text>
+
+  <text x="845" y="562" class="d">candidates: [Selection], ranked</text>
+  <text x="845" y="580" class="d">Selection = { sentence_id, why, rank,</text>
+  <text x="859" y="598" class="d">facet: contribution|method|result,</text>
+  <text x="859" y="616" class="d">label: objective|novelty|method|result }</text>
+
+  <text x="845" y="752" class="d">chosen: [Selection]  (subset)</text>
+  <text x="845" y="770" class="d">≤ density × #body sentences in total,</text>
+  <text x="845" y="788" class="d">≤ 1.2 / #sections per top-level section,</text>
+  <text x="845" y="806" class="d">abstract skipped, no backfill</text>
+
+  <text x="845" y="925" class="d">[Highlight] = { sentence_id, page_index,</text>
+  <text x="859" y="943" class="d">rects: [[x1,y1,x2,y2]]  PDF pts, bottom-left,</text>
+  <text x="859" y="961" class="d">sort_index, text, facet, label, why }</text>
+  <text x="845" y="979" class="n">a sentence that crosses a page → 2 Highlights</text>
+
+  <!-- Cache -->
+  <rect x="1250" y="88" width="210" height="80" class="ext"/>
+  <text x="1266" y="114" class="t" fill="#444">Cache</text>
+  <text x="1266" y="135" class="f">pipeline.py</text>
+  <text x="1266" y="155" class="n">server/.cache/*.json</text>
+  <path d="M812,118 L1248,118" class="ag"/>
+  <path d="M1248,140 L812,140" class="ag"/>
+  <text x="845" y="110" class="d">key = sha256(pdf) + density + scorer</text>
+  <text x="845" y="157" class="d">hit → stored HighlightResponse</text>
+
+  <!-- Claude API -->
+  <rect x="1250" y="455" width="210" height="96" class="ext"/>
+  <text x="1266" y="481" class="t" fill="#444">Claude API</text>
+  <text x="1266" y="501" class="n">Haiku 5.5 (Sonnet 5.5 switch)</text>
+  <text x="1266" y="521" class="n">or local: TextRank / stub</text>
+  <text x="1266" y="541" class="n">(no API needed)</text>
+  <path d="M812,478 L1248,478" class="ag"/>
+  <path d="M1248,505 L812,505" class="ag"/>
+  <text x="845" y="470" class="d">prompt: "[S] ## Methods / [17] We…"</text>
+  <text x="845" y="522" class="d">JSON {selections: [{id, facet, label, why}]}</text>
+
+  <!-- debug.py -->
+  <rect x="1250" y="640" width="210" height="112" class="box"/>
+  <text x="1266" y="666" class="t">Dev tools</text>
+  <text x="1266" y="687" class="f">debug.py</text>
+  <text x="1266" y="707" class="n">calls pipeline.run() directly</text>
+  <text x="1266" y="725" class="n">→ papers/out/*.highlighted.pdf</text>
+  <text x="1266" y="743" class="n">→ compare.csv (TextRank vs LLM)</text>
+  <path d="M1248,690 L830,690" class="ag"/>
+
+  <!-- test_core.py -->
+  <rect x="1250" y="1000" width="210" height="70" class="box"/>
+  <text x="1266" y="1026" class="t">Tests</text>
+  <text x="1266" y="1047" class="f">test_core.py</text>
+  <text x="1266" y="1063" class="n">geometry() + select()</text>
+</svg>

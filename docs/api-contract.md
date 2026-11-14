@@ -1,0 +1,1 @@
+# /highlight (and later /glossary) request/response contract — draft shapes are in design-report.md §4.1; finalize them here together in week 2. Mirrored by the models in server/app.py and the types in plugin/src/modules/highlighter.ts.

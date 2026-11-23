@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import math
 import re
 import statistics
 import sys
 import unicodedata
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pymupdf
@@ -59,9 +60,48 @@ class _Line:
     bold: bool
     page_w: float
     page_h: float
+    # PyMuPDF words on this line: (x0, y0, x1, y1, text), page coords, top-left origin
+    words: list[tuple[float, float, float, float, str]] = field(default_factory=list)
 
 
 def extract(pdf_path: str | Path) -> str:
+    doc_title, sections, _ = _parse(pdf_path)
+    output = _format_markdown(doc_title, sections)
+    if not output:
+        raise ValueError("no text extracted")
+    return output
+
+
+def extract_structured(pdf_path: str | Path) -> dict:
+    """Same parsing as extract(), but keeps positions: sections -> paragraphs -> lines -> words.
+
+    Boxes are PyMuPDF page coordinates (points, origin top-left of the page).
+    """
+    doc_title, sections, page_sizes = _parse(pdf_path)
+
+    def box(values) -> list[float]:
+        return [round(v, 2) for v in values]
+
+    out_sections, para_id = [], 0
+    for heading, groups in sections:
+        paragraphs = []
+        for group in groups:
+            paragraphs.append({
+                "id": para_id,
+                "text": _join_wrapped([ln.text for ln in group]),
+                "lines": [
+                    {"page": ln.page, "bbox": box((ln.x0, ln.y0, ln.x1, ln.y1)), "text": ln.text,
+                     "words": [{"text": w[4], "bbox": box(w[:4])} for w in ln.words]}
+                    for ln in group
+                ],
+            })
+            para_id += 1
+        out_sections.append({"heading": heading, "paragraphs": paragraphs})
+    pages = [{"index": i, "width": w, "height": h} for i, (w, h) in enumerate(page_sizes)]
+    return {"title": doc_title, "pages": pages, "sections": out_sections}
+
+
+def _parse(pdf_path: str | Path):
     path = Path(pdf_path)
     if not path.is_file():
         raise ValueError(f"PDF not found: {path}")
@@ -72,6 +112,7 @@ def extract(pdf_path: str | Path) -> str:
         if doc.page_count > MAX_PAGES:
             raise ValueError(f"PDF has {doc.page_count} pages (limit: {MAX_PAGES})")
         raw_pages = [_read_page(doc[i], i) for i in range(doc.page_count)]
+        page_sizes = [(doc[i].rect.width, doc[i].rect.height) for i in range(doc.page_count)]
 
     # Strip headers/footers using raw geometric coordinates before column sorting.
     pages = _strip_furniture(raw_pages)
@@ -84,16 +125,14 @@ def extract(pdf_path: str | Path) -> str:
 
     lines, body_size = _filter_body(ordered)
     doc_title, sections = _group_sections(lines, body_size)
-    output = _format_markdown(doc_title, sections)
-    if not output:
-        raise ValueError("no text extracted")
-    return output
+    return doc_title, sections, page_sizes
 
 
 def _read_page(page: pymupdf.Page, page_idx: int) -> list[_Line]:
     width, height = page.rect.width, page.rect.height
     with contextlib.redirect_stdout(io.StringIO()):
         table_boxes = [t.bbox for t in page.find_tables().tables if t.cells]
+    page_words = page.get_text("words")
 
     lines: list[_Line] = []
     for block_idx, block in enumerate(page.get_text("dict").get("blocks", [])):
@@ -130,6 +169,10 @@ def _read_page(page: pymupdf.Page, page_idx: int) -> list[_Line]:
                     bold=bold,
                     page_w=width,
                     page_h=height,
+                    words=[
+                        tuple(w[:5]) for w in page_words
+                        if x0 - 1 <= (w[0] + w[2]) / 2 <= x1 + 1 and y0 - 1 <= (w[1] + w[3]) / 2 <= y1 + 1
+                    ],
                 )
             )
             is_first = False
@@ -177,17 +220,17 @@ def _is_bold(span: dict) -> bool:
 
 def _strip_furniture(pages: list[list[_Line]]) -> list[list[_Line]]:
     def norm_key(text: str) -> str:
-        return " ".join(re.sub(r"\d+", "#", text.casefold()).split())
+        # Words only, order-free: alternating headers ("12950 • J. Neurosci." / "J. Neurosci. • 12949") match.
+        return " ".join(sorted(re.findall(r"[a-z]+", text.casefold())))
 
     top_counts: Counter[str] = Counter()
     bottom_counts: Counter[str] = Counter()
     for lines in pages:
         top_band = [ln for ln in lines if ln.y0 < 0.13 * ln.page_h]
         bot_band = [ln for ln in lines if ln.y1 > 0.87 * ln.page_h]
-        if top_band:
-            top_counts[norm_key(min(top_band, key=lambda ln: ln.y0).text)] += 1
-        if bot_band:
-            bottom_counts[norm_key(max(bot_band, key=lambda ln: ln.y1).text)] += 1
+        # Count every line in the band (a header can be two lines at the same height), once per page.
+        top_counts.update({norm_key(ln.text) for ln in top_band})
+        bottom_counts.update({norm_key(ln.text) for ln in bot_band})
 
     threshold = max(2, math.ceil(len(pages) * 0.6))
     repeated_top = {k for k, v in top_counts.items() if k and v >= threshold}
@@ -197,7 +240,7 @@ def _strip_furniture(pages: list[list[_Line]]) -> list[list[_Line]]:
     for lines in pages:
         kept: list[_Line] = []
         for ln in lines:
-            if ln.y1 < 0.055 * ln.page_h or ln.y0 > 0.945 * ln.page_h:
+            if ln.y1 < 0.055 * ln.page_h:
                 continue
             if _PAGE_NUMBER.match(ln.text):
                 continue
@@ -349,7 +392,7 @@ def _extract_title(preamble: list[_Line], body_size: float) -> str | None:
 
 def _group_sections(
     lines: list[_Line], body_size: float
-) -> tuple[str | None, list[tuple[str | None, list[str]]]]:
+) -> tuple[str | None, list[tuple[str | None, list[list[_Line]]]]]:
     tagged: list[tuple[_Line, str | None]] = []
     for ln in lines:
         head = _parse_heading(ln, body_size)
@@ -377,7 +420,7 @@ def _group_sections(
         return None, ([(None, paras)] if paras else [])
 
     doc_title = _extract_title([ln for ln, _ in tagged[:start]], body_size)
-    sections: list[tuple[str | None, list[str]]] = []
+    sections: list[tuple[str | None, list[list[_Line]]]] = []
     title: str | None = None
     buf: list[_Line] = []
     skipping = False
@@ -405,11 +448,12 @@ def _group_sections(
     return doc_title, sections
 
 
-def _build_paragraphs(lines: list[_Line]) -> list[str]:
+def _build_paragraphs(lines: list[_Line]) -> list[list[_Line]]:
+    """Group lines into paragraphs; each paragraph keeps its lines (and their positions)."""
     if not lines:
         return []
 
-    groups: list[list[str]] = [[lines[0].text]]
+    groups: list[list[_Line]] = [[lines[0]]]
     for prev, curr in zip(lines, lines[1:]):
         same_block = prev.page == curr.page and prev.block == curr.block
         prev_ends_sent = prev.text[-1] in ".?!\"')]"
@@ -420,15 +464,15 @@ def _build_paragraphs(lines: list[_Line]) -> list[str]:
             and (curr.y0 - prev.y1) > line_h * 1.5
         )
         if (not same_block and prev_ends_sent) or large_gap:
-            groups.append([curr.text])
+            groups.append([curr])
         else:
-            groups[-1].append(curr.text)
+            groups[-1].append(curr)
 
-    paragraphs: list[str] = []
+    paragraphs: list[list[_Line]] = []
     for group in groups:
-        para = _join_wrapped(group)
+        para = _join_wrapped([ln.text for ln in group])
         if sum(any(ch.isalpha() for ch in w) for w in para.split()) >= 3:
-            paragraphs.append(para)
+            paragraphs.append(group)
     return paragraphs
 
 
@@ -449,7 +493,7 @@ def _join_wrapped(lines: list[str]) -> str:
 
 
 def _format_markdown(
-    doc_title: str | None, sections: list[tuple[str | None, list[str]]]
+    doc_title: str | None, sections: list[tuple[str | None, list[list[_Line]]]]
 ) -> str:
     blocks: list[str] = []
     if doc_title:
@@ -457,15 +501,20 @@ def _format_markdown(
     for heading, paragraphs in sections:
         if heading:
             blocks.append(f"## {heading}")
-        blocks.extend(paragraphs)
+        blocks.extend(_join_wrapped([ln.text for ln in group]) for group in paragraphs)
     return ("\n\n".join(blocks) + "\n") if blocks else ""
 
 
 def main(argv: list[str] | None = None) -> None:
     args = sys.argv[1:] if argv is None else argv
+    as_json = "--json" in args
+    args = [a for a in args if a != "--json"]
     if len(args) != 1:
-        raise SystemExit("usage: python pdf.py path/to/paper.pdf")
-    sys.stdout.write(extract(args[0]))
+        raise SystemExit("usage: python pdf.py [--json] path/to/paper.pdf")
+    if as_json:
+        sys.stdout.write(json.dumps(extract_structured(args[0]), ensure_ascii=False, indent=1) + "\n")
+    else:
+        sys.stdout.write(extract(args[0]))
 
 
 if __name__ == "__main__":

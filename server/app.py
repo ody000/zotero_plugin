@@ -1,9 +1,7 @@
-"""FastAPI routes (GET /health, POST /highlight), JSON contract models, and stub mode.
+"""FastAPI routes (GET /health, POST /highlight) and the JSON contract models.
 
-Minimal version for now: every request from highlighter.ts is appended to
-server/.cache/requests.jsonl, and the server answers with one hard-coded "stub"
-highlight. That lets the plugin be tested end to end before pdf.py / scoring.py /
-pipeline.py exist. Later, `highlight()` will call pipeline.run() instead.
+POST /highlight logs the request to server/.cache/requests.jsonl, then runs pipeline.run()
+(parse -> sentences -> Scim rules -> density/caps -> rectangles) and returns the highlights.
 
 Run (from server/):  uv run uvicorn app:app --port 8765
 """
@@ -19,12 +17,13 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from pipeline import SCORER_NAME, run
+
 CACHE_DIR = Path(__file__).parent / ".cache"
 REQUEST_LOG = CACHE_DIR / "requests.jsonl"
-SCORER = "stub"  # later: read from .env ("stub" | "textrank" | "llm")
 
 
-# ------------------------------------------------------------------ JSON contract
+# -------------------- The JSON contract
 # Keep in sync with plugin/src/modules/highlighter.ts and docs/api-contract.md.
 
 Facet = Literal["contribution", "method", "result"]
@@ -32,7 +31,7 @@ Facet = Literal["contribution", "method", "result"]
 
 class HighlightRequest(BaseModel):
     pdf_path: str
-    density: float = Field(0.10, ge=0.05, le=0.20)  # fraction of body sentences
+    density: float = Field(0.15, ge=0.05, le=0.20)  # fraction of body sentences
     force: bool = False  # True = ignore the cache
 
 
@@ -48,8 +47,9 @@ class Highlight(BaseModel):
 
 
 class Stats(BaseModel):
-    n_sentences: int = 0
-    n_selected: int = 0
+    n_sentences: int = 0  # body sentences after parsing (abstract and references excluded)
+    n_candidates: int = 0  # sentences passing Scim's score threshold
+    n_selected: int = 0  # after the density budget and per-section cap
     ms: int = 0
 
 
@@ -60,14 +60,14 @@ class HighlightResponse(BaseModel):
     stats: Stats = Field(default_factory=Stats)
 
 
-# ------------------------------------------------------------------ routes
+# ------------------------------------- routes
 
 app = FastAPI(title="Paper highlighter")
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "scorer": SCORER}
+    return {"status": "ok", "scorer": SCORER_NAME}
 
 
 @app.post("/highlight", response_model=HighlightResponse)
@@ -78,16 +78,19 @@ def highlight(request: HighlightRequest) -> HighlightResponse:
         raise HTTPException(status_code=404, detail=f"PDF not found: {request.pdf_path}")
 
     store_request(request, pdf)
-    highlights = [stub_highlight()]
+    try:
+        result = run(str(pdf), request.density)
+    except ValueError as error:  # pdf.py's "encrypted" / "too many pages" / "no text extracted"
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
     return HighlightResponse(
-        highlights=highlights,
-        scorer=SCORER,
-        stats=Stats(n_selected=len(highlights), ms=round((time.perf_counter() - started) * 1000)),
+        highlights=[Highlight(**h) for h in result["highlights"]],
+        scorer=SCORER_NAME,
+        stats=Stats(**result["stats"], ms=round((time.perf_counter() - started) * 1000)),
     )
 
 
-# ------------------------------------------------------------------ helpers
+# ----------------------------- Helper functions below
 
 def store_request(request: HighlightRequest, pdf: Path) -> None:
     """Append what the plugin sent (plus a timestamp and the file size) as one JSON line."""
@@ -99,21 +102,3 @@ def store_request(request: HighlightRequest, pdf: Path) -> None:
     }
     with REQUEST_LOG.open("a", encoding="utf-8") as log:
         log.write(json.dumps(record) + "\n")
-
-
-def stub_highlight() -> Highlight:
-    """One box near the TOP of page 1 (US Letter is 612 x 792 pt, y measured from the bottom).
-
-    If it shows up near the bottom of the page in Zotero, the y-axis convention is wrong.
-    sort_index top = floor(792 - 714) = 78.
-    """
-    return Highlight(
-        sentence_id=0,
-        page_index=0,
-        rects=[[72.0, 700.0, 540.0, 714.0]],
-        sort_index="00000|000000|00078",
-        text="(stub highlight near the top of page 1)",
-        facet="result",
-        label="result",
-        why="stub response from app.py",
-    )

@@ -273,3 +273,26 @@ See **§4.1** (diagram + table of what flows between each pair of files).
 - **Scorers are swappable** inside `scoring.py` (stub → TextRank → LLM via a setting), and TextRank stays available as the baseline.
 - **Colors live only in the plugin.** The server returns facet labels, so presentation tweaks never touch Python.
 - **`pdf.py` is the biggest risk and the biggest file.** If it outgrows ~400 lines, the natural split is `pdf_extract.py` (words, order, sections, cleanup) vs `pdf_geometry.py` (rects, y-flip, sortIndex).
+
+---
+
+## 11. Findings: PyMuPDF extraction experiment (2026-11-16)
+
+Test: pages 1–2 of Ganguly et al. 2009 (J. Neurosci., two-column, symbol fonts, an equation), extracted with PyMuPDF 1.28.2 as plain text (`get_text("text")`) and as nested block → line → word JSON (built from `get_text("words")`). Raw outputs: `papers/out/extraction-experiment/` (git-ignored).
+
+**Works**
+- **Reading order is correct with the default order.** Title → authors → affiliations → abstract → left column top to bottom → right column top to bottom → footnotes. Two-column layout is handled.
+- **Plain text and the word list contain exactly the same tokens** on page 1, so they're two views of the same data. Use the word list for geometry and join it for text.
+- **Sentences continue across pages cleanly**: page 1's body ends "(Rickert et", page 2's first block starts "al., 2005; …".
+- **Fonts tell headings apart.** "Materials and Methods" = bold 12 pt, "Monkeys" = italic 9.5 pt, "Surgery." = italic 8.5 pt run-in heading, body = regular 8.5 pt. Section detection can use font size and bold from `get_text("dict")`.
+- No ligature characters (ﬁ/ﬂ) on these pages, and existing highlights in the PDF don't affect extraction.
+
+**Problems to handle in `pdf.py`**
+1. **Never use `sort=True`.** It sorts lines top-to-bottom across the whole page and **interleaves the two columns line by line**.
+2. **The running header comes last** on each page ("12948 • The Journal of Neuroscience…"), and footnotes come after the right column. Drop blocks in the top/bottom page margins and small-font footnote blocks before splitting sentences, or they get glued onto the next page's first sentence.
+3. **Symbol-font characters become control characters.** `35 µm` → `35 \x01m`, `8 × 8` → `8 \x01 8`, `∼10 trials` → `\x0210 trials`. The `words` output silently drops them (`µm` → `m`). The fonts (`MathematicalPi-One`, `Universal-GreekwithMathP`) have no Unicode mapping. Handling: strip control characters, and maybe map the most common ones per font. Don't expect perfect text for symbols.
+4. **Equations come out as garbage** (`Y \x03 t \x04 \x02 b …`, pieces out of order). Drop blocks made mostly of control characters or symbol fonts.
+5. **Line-break hyphens are kept** ("mo-" / "tor", "rep-" / "resents"), mixed with real compound words that break at their hyphen ("closed-loop", "time-to-target", "false-positive"). PyMuPDF's `TEXT_DEHYPHENATE` flag changed nothing in `text` mode here. We need our own rule. This only affects the sentence *text* sent to the LLM and shown in the annotation, not the highlight rectangles.
+6. **Headings are glued to the paragraph in one block** ("Materials and Methods Monkeys Surgery. Two adult male…"), so sentence splitting must happen at the span/font level, not per block.
+7. Superscript affiliation markers stick to names in plain text ("Ganguly,1,2,6*"). This doesn't matter, since the title/author area is skipped anyway.
+

@@ -53,5 +53,6 @@ def test_group_sections_skips_abstract_and_stops_at_references():
         make_line("References", size=12.0, bold=True),
         make_line("[1] Smith et al. Should not appear."),
     ]
-    sections = _group_sections(lines, body_size=10.0)
-    assert sections == [("1. Introduction", ["First body sentence is kept here."])]
+    _, sections = _group_sections(lines, body_size=10.0)
+    as_text = [(title, [" ".join(ln.text for ln in para) for para in paras]) for title, paras in sections]
+    assert as_text == [("1. Introduction", ["First body sentence is kept here."])]

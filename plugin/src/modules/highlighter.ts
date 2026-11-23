@@ -72,7 +72,7 @@ const FACET_NAMES: Record<Facet, string> = {
 };
 
 const DEFAULTS = {
-  density: 10,
+  density: 15,
   autoRun: true,
   serverUrl: "http://127.0.0.1:8765",
 };
